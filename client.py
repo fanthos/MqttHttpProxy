@@ -17,6 +17,7 @@ MQTT_USER = ''
 MQTT_PASS = ''
 
 MSG_PASS = b'key in 16 bytes!'
+API_HEADERS = { 'x-ha-access': 'test' }
 MQTT_TOPIC = 'httptest1'
 HTTP_PREFIX = 'http://127.0.0.1:8123/api/'
 
@@ -120,7 +121,7 @@ async def queue_loop():
             logger.error(e)
 
 async def main_client():
-    _G['session'] = aiohttp.ClientSession()
+    _G['session'] = aiohttp.ClientSession(headers=API_HEADERS)
     await mqtt_init(MQTT_TOPIC_REQ)
     asyncio.ensure_future(queue_loop())
     while True:
