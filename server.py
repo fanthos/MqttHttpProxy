@@ -179,7 +179,6 @@ async def main_server():
     asyncio.ensure_future(queue_loop())
 
 loop = asyncio.get_event_loop()
-loop.set_debug(True)
 
 asyncio.ensure_future(main_server())
 loop.run_forever()

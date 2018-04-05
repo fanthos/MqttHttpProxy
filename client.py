@@ -133,7 +133,6 @@ async def main_client():
 
 
 loop = asyncio.get_event_loop()
-loop.set_debug(True)
 
 asyncio.ensure_future(main_client())
 loop.run_forever()
