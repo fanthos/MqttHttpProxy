@@ -88,26 +88,29 @@ server_req_evt = [None]
 server_req_max = 1
 server_req_que = asyncio.Queue()
 
+async def queue_process(topic, origdata):
+    _, clientid = topic.split('/', maxsplit=1)
+    data = await decrypt(clientid, origdata)
+    if data is None:
+        return
+    obj = json.loads(data)
+    callid = obj.get('callid')
+    if callid is None:
+        return
+    evt = server_req_evt[callid]
+    if evt is None or evt[1] != clientid:
+        return
+    evt[2] = obj['code']
+    evt[3] = obj['result']
+    evt[0].set()
+
 async def queue_loop():
     while True:
         try:
             pkt = (await mqtt_receive()).publish_packet
             topic = pkt.variable_header.topic_name
             if topic.startswith('resp/'):
-                _, clientid = topic.split('/', maxsplit=1)
-                data = await decrypt(clientid, pkt.payload.data)
-                if data is None:
-                    continue
-                obj = json.loads(data)
-                callid = obj.get('callid')
-                if callid is None:
-                    continue
-                evt = server_req_evt[callid]
-                if evt is None or evt[1] != clientid:
-                    continue
-                evt[2] = obj['code']
-                evt[3] = obj['result']
-                evt[0].set()
+                asyncio.ensure_future(queue_process(topic, pkt.payload.data))
             else:
                 logger.warning('Topic not recongize: ' + topic)
         except Exception as e:
