@@ -16,19 +16,44 @@ MQTT_SERVER = 'mqtt://127.0.0.1/'
 MQTT_USER = ''
 MQTT_PASS = ''
 
+MSG_PASS = b'key in 16 bytes!'
 MQTT_TOPIC = 'httptest1'
 HTTP_PREFIX = 'http://127.0.0.1:8123/api/'
 
 
 logger = logging.getLogger(__name__)
 
+
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+import zlib
+
 async def decrypt(data):
-    return data
+    if len(data) < 34:
+        return None
+    nonce = data[0:16]
+    tag = data[16:32]
+    encdata = data[32:]
+    msgpass = MSG_PASS
+    encobj = AES.new(msgpass, AES.MODE_GCM, nonce=nonce)
+    try:
+        plaindata = encobj.decrypt_and_verify(encdata, tag)
+    except ValueError:
+        return None
+    zobj = zlib.decompressobj(wbits=-15)
+    result = zobj.decompress(plaindata) + zobj.flush()
+
+    return result
 
 async def encrypt(data):
-    return data
+    msgpass = MSG_PASS
+    zobj = zlib.compressobj(wbits=-15)
+    compressed = zobj.compress(data) + zobj.flush()
+    encobj = AES.new(msgpass, AES.MODE_GCM)
+
+    encdata, tag = encobj.encrypt_and_digest(compressed)
+
+    return encobj.nonce + tag + encdata
 
 
 MQTT_TOPIC_REQ = 'req/' + MQTT_TOPIC
@@ -64,10 +89,9 @@ async def http_process(method, url, headers, body):
     return resp.status, respdata
 
 async def proc_req(reqdata):
-    realdata = await decrypt(reqdata)
-    if not realdata:
+    if not reqdata:
         return
-    obj = json.loads(realdata.decode())
+    obj = json.loads(reqdata.decode())
     code, resp = await http_process(
         obj.get('method'),
         obj.get('url'),
