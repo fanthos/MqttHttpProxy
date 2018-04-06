@@ -13,7 +13,7 @@ from collections import namedtuple
 # if len(argv) < 2:
 #     sys.exit()
 
-MQTT_SERVER = 'mqtt://127.0.0.1/'
+MQTT_SERVER = '127.0.0.1'
 MQTT_USER = ''
 MQTT_PASS = ''
 
@@ -31,13 +31,18 @@ from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 import zlib
 
+async def getcryptkey(clientid):
+    ''' Get client key for client id. '''
+    return MSG_PASS_DICT.get(clientid)
+
 async def decrypt(clientid, data):
+    ''' Decrypt and decompress data. '''
     if len(data) < 34:
         return None
     nonce = data[0:16]
     tag = data[16:32]
     encdata = data[32:]
-    msgpass = MSG_PASS_DICT.get(clientid)
+    msgpass = await getcryptkey(clientid)
     if msgpass is None:
         return None
     encobj = AES.new(msgpass, AES.MODE_GCM, nonce=nonce)
@@ -51,7 +56,8 @@ async def decrypt(clientid, data):
     return result
 
 async def encrypt(clientid, data):
-    msgpass = MSG_PASS_DICT.get(clientid)
+    ''' Encrypt and hash data. '''
+    msgpass = await getcryptkey(clientid)
     if msgpass is None:
         return None
     zobj = zlib.compressobj(wbits=-15)
@@ -75,7 +81,7 @@ async def mqtt_init(topic):
     global mqtt
     if not mqtt:
         mqtt = MQTTClient(config=mqtt_cfg)
-        await mqtt.connect(MQTT_SERVER)
+        await mqtt.connect('mqtt://' + MQTT_USER + ':' + MQTT_PASS + '@' + MQTT_SERVER)
     await mqtt.subscribe([(topic, MQTT_QOS_1)])
 
 async def mqtt_publish(topic, data):

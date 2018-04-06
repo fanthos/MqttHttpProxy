@@ -12,7 +12,7 @@ import async_timeout
 # if len(argv) < 2:
 #     sys.exit()
 
-MQTT_SERVER = 'mqtt://127.0.0.1/'
+MQTT_SERVER = '127.0.0.1'
 MQTT_USER = ''
 MQTT_PASS = ''
 
@@ -73,7 +73,7 @@ async def mqtt_init(topic):
     global mqtt
     if not mqtt:
         mqtt = MQTTClient(config=mqtt_cfg)
-        await mqtt.connect(MQTT_SERVER)
+        await mqtt.connect('mqtt://' + MQTT_USER + ':' + MQTT_PASS + '@' + MQTT_SERVER)
     await mqtt.subscribe([(topic, MQTT_QOS_1)])
 
 async def mqtt_publish(topic, data):
