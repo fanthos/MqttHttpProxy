@@ -87,8 +87,10 @@ async def user_init():
 async def user_get(cid):
     conn = _G['conn']
     c = conn.cursor()
-    r = c.execute('SELECT enckey FROM users WHERR cid=?', (cid,))
+    r = c.execute('SELECT enckey FROM users WHERE cid=?', (cid,))
     b = r.fetchone()
+    if b is None:
+        return None
     return base64.b64decode(b[0])
 
 # Fix bug in HBMQTT when using websocket
@@ -174,7 +176,10 @@ async def server_handler(request):
         server_req_evt[callid] = evt
         data = json.dumps(obj).encode()
 
-        await mqtt_publish('req/' + clientid, await encrypt(clientid, data))
+        encdata = await encrypt(clientid, data)
+        if encdata is None:
+            return web.Response(status=403, text='Permission Denied.')
+        await mqtt_publish('req/' + clientid, encdata)
         async with async_timeout.timeout(CLIENT_TIMEOUT) as tm:
             await evt[0].wait()
         if tm.expired:

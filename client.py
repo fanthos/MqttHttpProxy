@@ -19,7 +19,7 @@ MQTT_PROTOCOL = 'wss'
 
 MSG_PASS = b'encrypt+key+in+base64/=='
 API_HEADERS = { 'x-ha-access': 'test' }
-MQTT_TOPIC = 'httptest1'
+MQTT_TOPIC = 'test1'
 HTTP_PREFIX = 'http://127.0.0.1:8123/'
 
 
@@ -98,8 +98,11 @@ async def mqtt_receive():
 async def http_process(method, url, headers, body):
     method_ = method.upper()
     url_ = HTTP_PREFIX + url
-    async with _G['session'].request(method_, url_, headers=headers, data=body) as resp:
-        respdata = await resp.text()
+    try:
+        async with _G['session'].request(method_, url_, headers=headers, data=body) as resp:
+            respdata = await resp.text()
+    except Exception:
+        return 504, 'HA not accessable'
     return resp.status, respdata
 
 async def proc_req(reqdata):
