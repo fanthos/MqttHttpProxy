@@ -7,15 +7,18 @@ import logging
 from aiohttp import web
 import async_timeout
 from collections import namedtuple
+import sqlite3
+import base64
 
 # import sys
 # argv = sys.argv
 # if len(argv) < 2:
 #     sys.exit()
 
-MQTT_SERVER = '127.0.0.1'
-MQTT_USER = ''
-MQTT_PASS = ''
+MQTT_SERVER = 'ha.ifts.ml/mqtt'
+MQTT_USER = 'ha_srv'
+MQTT_PASS = 'server'
+MQTT_PROTOCOL = 'wss'
 
 SERVER_PORT = 8180
 CLIENT_TIMEOUT = 10
@@ -33,7 +36,7 @@ import zlib
 
 async def getcryptkey(clientid):
     ''' Get client key for client id. '''
-    return MSG_PASS_DICT.get(clientid)
+    return await user_get(clientid)
 
 async def decrypt(clientid, data):
     ''' Decrypt and decompress data. '''
@@ -77,11 +80,33 @@ mqtt = None
 
 _G = {}
 
+async def user_init():
+    conn = sqlite3.connect('users.db')
+    _G['conn'] = conn
+
+async def user_get(cid):
+    conn = _G['conn']
+    c = conn.cursor()
+    r = c.execute('SELECT enckey FROM users WHERR cid=?', (cid,))
+    b = r.fetchone()
+    return base64.b64decode(b[0])
+
+# Fix bug in HBMQTT when using websocket
+async def _hbmqtt_hook_conn(self, *args):
+    if hasattr(self.session, 'broker_uri_old'):
+        self.session.broker_uri = self.session.broker_uri_old
+    else:
+        self.session.broker_uri_old = self.session.broker_uri
+    return await self._old_connect_coro(*args)
+
+MQTTClient._old_connect_coro = MQTTClient._connect_coro
+MQTTClient._connect_coro = _hbmqtt_hook_conn
+
 async def mqtt_init(topic):
     global mqtt
     if not mqtt:
         mqtt = MQTTClient(config=mqtt_cfg)
-        await mqtt.connect('mqtt://' + MQTT_USER + ':' + MQTT_PASS + '@' + MQTT_SERVER)
+        await mqtt.connect(MQTT_PROTOCOL + '://' + MQTT_USER + ':' + MQTT_PASS + '@' + MQTT_SERVER)
     await mqtt.subscribe([(topic, MQTT_QOS_1)])
 
 async def mqtt_publish(topic, data):
@@ -139,7 +164,6 @@ async def server_handler(request):
     # _, clientid, url = request.path_qs.split('/', maxsplit=2)
     callid = await server_req_que.get()
     try:
-        
         obj = {
             'callid': callid,
             'method': request.method,
@@ -181,6 +205,7 @@ async def server_init():
 
 async def main_server():
     await mqtt_init('resp/#')
+    await user_init()
     await server_init()
     asyncio.ensure_future(queue_loop())
 
