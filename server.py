@@ -71,13 +71,6 @@ async def encrypt(clientid, data):
 
     return encobj.nonce + tag + encdata
 
-mqtt_cfg = {
-    'default_qos': 1,
-    'keep_alive': 45,
-    'reconnect_retries': 99,
-}
-mqtt = None
-
 _G = {}
 
 async def user_init():
@@ -104,17 +97,33 @@ async def _hbmqtt_hook_conn(self, *args):
 MQTTClient._old_connect_coro = MQTTClient._connect_coro
 MQTTClient._connect_coro = _hbmqtt_hook_conn
 
+mqtt_cfg = {
+    'default_qos': 1,
+    'keep_alive': 45,
+    'auto_reconnect': False,
+}
+mqtt = None
+mqtttopics = []
+
 async def mqtt_init(topic):
     global mqtt
     if not mqtt:
         mqtt = MQTTClient(config=mqtt_cfg)
         await mqtt.connect(MQTT_PROTOCOL + '://' + MQTT_USER + ':' + MQTT_PASS + '@' + MQTT_SERVER)
-    await mqtt.subscribe([(topic, MQTT_QOS_1)])
+    mqtttopics.append((topic, MQTT_QOS_1))
+    await mqtt.subscribe(mqtttopics)
+
+async def mqtt_checkreconnect():
+    if not mqtt.session.transitions.is_connected():
+        await mqtt.reconnect()
+        await mqtt.subscribe(mqtttopics)
 
 async def mqtt_publish(topic, data):
+    await mqtt_checkreconnect()
     await mqtt.publish(topic, data, MQTT_QOS_1)
 
 async def mqtt_receive():
+    await mqtt_checkreconnect()
     return await mqtt.deliver_message()
 
 server_req_evt = [None]
@@ -126,7 +135,7 @@ async def queue_process(topic, origdata):
     data = await decrypt(clientid, origdata)
     if data is None:
         return
-    obj = json.loads(data)
+    obj = json.loads(data.decode())
     callid = obj.get('callid')
     if callid is None:
         return
@@ -189,7 +198,7 @@ async def server_handler(request):
     except GotoException:
         pass
     except asyncio.TimeoutError:
-        ret = web.Response(status=504, text='Client Timeout Exceed.')
+        ret = web.Response(status=503, text='Client Timeout Exceed.')
     except Exception as e:
         logger.error(e)
         ret = web.Response(status=500, text='Unknown Error')

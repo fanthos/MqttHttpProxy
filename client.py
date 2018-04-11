@@ -62,13 +62,6 @@ async def encrypt(data):
 MQTT_TOPIC_REQ = 'req/' + MQTT_TOPIC
 MQTT_TOPIC_RESP = 'resp/' + MQTT_TOPIC
 
-mqtt_cfg = {
-    'default_qos': 1,
-    'keep_alive': 45,
-    'reconnect_retries': 99,
-}
-mqtt = None
-
 _G = {}
 
 # Fix bug in HBMQTT when using websocket
@@ -82,17 +75,33 @@ async def _hbmqtt_hook_conn(self, *args):
 MQTTClient._old_connect_coro = MQTTClient._connect_coro
 MQTTClient._connect_coro = _hbmqtt_hook_conn
 
+mqtt_cfg = {
+    'default_qos': 1,
+    'keep_alive': 45,
+    'auto_reconnect': False,
+}
+mqtt = None
+mqtttopics = []
+
 async def mqtt_init(topic):
     global mqtt
     if not mqtt:
         mqtt = MQTTClient(config=mqtt_cfg)
         await mqtt.connect(MQTT_PROTOCOL + '://' + MQTT_USER + ':' + MQTT_PASS + '@' + MQTT_SERVER)
-    await mqtt.subscribe([(topic, MQTT_QOS_1)])
+    mqtttopics.append((topic, MQTT_QOS_1))
+    await mqtt.subscribe(mqtttopics)
+
+async def mqtt_checkreconnect():
+    if not mqtt.session.transitions.is_connected():
+        await mqtt.reconnect()
+        await mqtt.subscribe(mqtttopics)
 
 async def mqtt_publish(topic, data):
+    await mqtt_checkreconnect()
     await mqtt.publish(topic, data, MQTT_QOS_1)
 
 async def mqtt_receive():
+    await mqtt_checkreconnect()
     return await mqtt.deliver_message()
 
 async def http_process(method, url, headers, body):
@@ -102,7 +111,7 @@ async def http_process(method, url, headers, body):
         async with _G['session'].request(method_, url_, headers=headers, data=body) as resp:
             respdata = await resp.text()
     except Exception:
-        return 504, 'HA not accessable'
+        return 503, 'HA not accessable'
     return resp.status, respdata
 
 async def proc_req(reqdata):
